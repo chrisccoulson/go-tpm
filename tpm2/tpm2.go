@@ -595,12 +595,69 @@ func Seal(rw io.ReadWriter, parentHandle tpmutil.Handle, parentPassword, objectP
 	return private, public, nil
 }
 
-func encodeLoad(parentHandle tpmutil.Handle, auth AuthCommand, publicBlob, privateBlob []byte) ([]byte, error) {
-	ah, err := tpmutil.Pack(parentHandle)
+func encodeDuplicate() {}
+
+func decodeDuplicate() {}
+
+func Duplicate() {}
+
+func encodeImport(parentHandle tpmutil.Handle, auth AuthCommand, encryptionKey []byte, public Public, private Private, inSymSeed tpmutil.U16Bytes, symScheme SymScheme) ([]byte, error) {
+	ph, err := tpmutil.Pack(parentHandle)
 	if err != nil {
 		return nil, err
 	}
 	encodedAuth, err := encodeAuthArea(auth)
+	if err != nil {
+		return nil, err
+	}
+	encodedPublic, err := public.Encode()
+	if err != nil {
+		return nil, err
+	}
+	encodedPrivate, err := private.Encode()
+	if err != nil {
+		return nil, err
+	}
+	symSeed, err := tpmutil.Pack(inSymSeed)
+	if err != nil {
+		return nil, err
+	}
+	encodedScheme, err := symScheme.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return concat(ph, encodedAuth, encodedPublic, encodedPrivate, symSeed, encodedScheme)
+}
+
+func decodeImport(in []byte) ([]byte, error) {
+	var priv tpmutil.U16Bytes
+
+	if err := tpmutil.Unpack(in, &priv); err != nil {
+		return nil, err
+	}
+	return priv
+}
+
+// ImportUsingAuth imports.
+func ImportUsingAuth(rw io.ReadWriter, parentHandle tpmutil.Handle, auth AuthCommand, encryptionKey, publicBlob, privateBlob, encryptedSecret []byte, sym SymScheme) {
+	data, err := encodeImport(parentHandle, parentAuth, encryptionKey, publicBlob, privateBlob, encryptedSecret, sym)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := runCommand(rw, TagSessions, cmdImport, tpmutil.RawBytes(cmd))
+	if err != nil {
+		return 0, nil, err
+	}
+	return decodeLoad(resp)
+}
+
+func encodeLoad(parentHandle tpmutil.Handle, auth []AuthCommand, publicBlob, privateBlob tpmutil.U16Bytes) ([]byte, error) {
+	ah, err := tpmutil.Pack(parentHandle)
+	if err != nil {
+		return nil, err
+	}
+	encodedAuth, err := encodeAuthArea(auth...)
 	if err != nil {
 		return nil, err
 	}
@@ -625,14 +682,14 @@ func decodeLoad(in []byte) (tpmutil.Handle, []byte, error) {
 // Load loads public/private blobs into an object in the TPM.
 // Returns loaded object handle and its name.
 func Load(rw io.ReadWriter, parentHandle tpmutil.Handle, parentAuth string, publicBlob, privateBlob []byte) (tpmutil.Handle, []byte, error) {
-	return LoadUsingAuth(rw, parentHandle, AuthCommand{
-		Session: HandlePasswordSession, Attributes: AttrContinueSession, Auth: []byte(parentAuth),
+	return LoadUsingAuth(rw, parentHandle, []AuthCommand{
+		AuthCommand{Session: HandlePasswordSession, Attributes: AttrContinueSession, Auth: []byte(parentAuth)},
 	}, publicBlob, privateBlob)
 }
 
 // Load loads public/private blobs into an object in the TPM.
 // Returns loaded object handle and its name.
-func LoadUsingAuth(rw io.ReadWriter, parentHandle tpmutil.Handle, auth AuthCommand, publicBlob, privateBlob []byte) (tpmutil.Handle, []byte, error) {
+func LoadUsingAuth(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []AuthCommand, publicBlob, privateBlob []byte) (tpmutil.Handle, []byte, error) {
 	cmd, err := encodeLoad(parentHandle, auth, publicBlob, privateBlob)
 	if err != nil {
 		return 0, nil, err
