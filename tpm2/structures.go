@@ -341,6 +341,7 @@ func decodeSymCipherParams(in *bytes.Buffer) (*SymCipherParams, error) {
 }
 
 // SymScheme represents a symmetric encryption scheme.
+// Known in the specification by TPMT_SYM_DEF_OBJECT.
 type SymScheme struct {
 	Alg     Algorithm
 	KeyBits uint16
